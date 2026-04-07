@@ -140,7 +140,8 @@ def launch_windows_chrome(port: int = DEFAULT_WSL_CDP_PORT, debug: bool = False)
     if not is_wsl():
         raise RuntimeError("Not running in WSL environment")
 
-    # Check if Chrome is already running
+    # Check if Chrome is already running - this is a HARD REQUIREMENT
+    # because Chrome uses a single-instance model
     try:
         result = subprocess.run(
             ["pgrep", "-f", "chrome.exe"],
@@ -148,9 +149,37 @@ def launch_windows_chrome(port: int = DEFAULT_WSL_CDP_PORT, debug: bool = False)
             text=True,
         )
         if result.returncode == 0 and result.stdout.strip():
-            logger.warning("Chrome appears to already be running. Remote debugging may fail.")
+            # Try taskkill to close Chrome
+            try:
+                subprocess.run(
+                    ["taskkill", "/f", "/im", "chrome.exe"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                time.sleep(2)  # Wait for Chrome to close
+                # Check again
+                result2 = subprocess.run(
+                    ["pgrep", "-f", "chrome.exe"],
+                    capture_output=True,
+                    text=True,
+                )
+                if result2.returncode == 0 and result2.stdout.strip():
+                    raise RuntimeError(
+                        "Chrome is already running and could not be closed. "
+                        "\n\nPlease:"
+                        "\n  1. Close ALL Chrome windows and tabs manually"
+                        "\n  2. Run: taskkill /f /im chrome.exe  (in Windows PowerShell Admin)"
+                        "\n  3. Then retry: nlm login --wsl"
+                    )
+            except Exception as e:
+                if "Chrome is already running" in str(e):
+                    raise
+                logger.debug(f"Could not terminate existing Chrome: {e}")
+    except RuntimeError:
+        raise
     except Exception:
-        pass  # pgrep might not be available
+        pass  # pgrep might not be available, continue anyway
 
     chrome_path = find_windows_chrome()
     if not chrome_path:
@@ -178,7 +207,9 @@ def launch_windows_chrome(port: int = DEFAULT_WSL_CDP_PORT, debug: bool = False)
         str(wsl_chrome),
         f"--remote-debugging-port={port}",
         "--remote-debugging-address=0.0.0.0",
-        f"--user-data-dir={windows_temp}",  # Fresh profile to avoid conflicts
+        f"--user-data-dir={windows_temp}",  # CRITICAL: Fresh profile for separate instance
+        "--incognito",  # Use incognito mode to avoid profile conflicts
+        "--new-window",  # Force new window in this instance
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-extensions",
@@ -188,7 +219,7 @@ def launch_windows_chrome(port: int = DEFAULT_WSL_CDP_PORT, debug: bool = False)
         "--disable-breakpad",
         "--disable-component-update",
         "--disable-default-apps",
-        "--disable-features=TranslateUI",
+        "--disable-features=ChromeCleanup,TranslateUI,PrivacySandboxSettings4",
         "--disable-hang-monitor",
         "--disable-ipc-flooding-protection",
         "--disable-popup-blocking",
@@ -196,8 +227,9 @@ def launch_windows_chrome(port: int = DEFAULT_WSL_CDP_PORT, debug: bool = False)
         "--disable-renderer-backgrounding",
         "--force-color-profile=srgb",
         "--metrics-recording-only",
-        "--no-default-browser-check",
         "--safebrowsing-disable-auto-update",
+        "--password-store=basic",  # Don't try to use system password store
+        "--use-mock-keychain",  # Use mock keychain on macOS/Windows
     ]
 
     stderr_arg = None if debug else subprocess.DEVNULL
