@@ -3,9 +3,26 @@
 WSL2 cannot directly launch GUI applications without causing terminal corruption.
 This module provides helpers to launch Windows Chrome from WSL and manage
 the cross-boundary authentication flow.
+
+Security Note:
+--------------
+This module launches Chrome with --remote-debugging-address=0.0.0.0 to allow
+connections from the WSL2 virtual network. This differs from the standard
+H-3 remediation (which restricts to 127.0.0.1) because WSL2 uses a virtual
+network bridge that requires cross-boundary access.
+
+Mitigations in place:
+- Windows Firewall limits connections to LocalSubnet (WSL virtual network only)
+- Temporary Chrome profiles are used and cleaned up after authentication
+- Chrome remote debugging is only active during explicit nlm login --wsl
+- No other network hosts can reach the debugging port
+
+See: docs/SECURITY_REMEDIATION_PLAN.md (H-3) for original security context.
 """
 
+import contextlib
 import logging
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -244,9 +261,14 @@ def launch_windows_chrome(port: int = DEFAULT_WSL_CDP_PORT, debug: bool = False)
             stderr=stderr_arg,
             start_new_session=True,  # Prevent signal propagation
         )
+        # Store temp_dir for cleanup in terminate_windows_chrome
+        process._nlm_temp_dir = temp_dir  # type: ignore[attr-defined]
         logger.debug(f"Chrome process started: PID {process.pid}")
         return process
     except Exception as e:
+        # Clean up temp dir on launch failure
+        with contextlib.suppress(Exception):
+            shutil.rmtree(temp_dir, ignore_errors=True)
         raise RuntimeError(f"Failed to launch Chrome: {e}") from e
 
 
@@ -289,6 +311,8 @@ def wait_for_cdp(cdp_url: str, timeout: int = 30) -> bool:
 def terminate_windows_chrome(process: subprocess.Popen | None) -> bool:
     """Terminate a Windows Chrome process launched from WSL.
 
+    Also cleans up the temporary Chrome profile directory if one was created.
+
     Args:
         process: subprocess.Popen handle from launch_windows_chrome()
 
@@ -298,6 +322,9 @@ def terminate_windows_chrome(process: subprocess.Popen | None) -> bool:
     if process is None:
         return False
 
+    # Get temp_dir before terminating (in case process._nlm_temp_dir is cleared)
+    temp_dir = getattr(process, "_nlm_temp_dir", None)
+
     try:
         process.terminate()
         try:
@@ -305,10 +332,18 @@ def terminate_windows_chrome(process: subprocess.Popen | None) -> bool:
         except subprocess.TimeoutExpired:
             process.kill()
         logger.debug(f"Terminated Chrome process {process.pid}")
-        return True
     except Exception as e:
         logger.warning(f"Failed to terminate Chrome: {e}")
-        return False
+
+    # Clean up temp profile directory
+    if temp_dir:
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            logger.debug(f"Cleaned up Chrome temp profile: {temp_dir}")
+        except Exception as e:
+            logger.debug(f"Failed to cleanup temp dir {temp_dir}: {e}")
+
+    return True
 
 
 def get_wsl_cdp_url(port: int = DEFAULT_WSL_CDP_PORT) -> str | None:

@@ -19,6 +19,30 @@ NotebookLM MCP now includes WSL2-aware authentication that:
 3. Extracts cookies over the WSL-Windows network bridge
 4. Closes Chrome automatically
 
+## Security Considerations
+
+### Chrome Remote Debugging Address
+
+The `--wsl` flag launches Chrome with `--remote-debugging-address=0.0.0.0`, which
+binds the DevTools Protocol to all network interfaces (not just localhost). This
+is necessary because WSL2 uses a virtual network bridge, and connections from
+WSL to Windows must traverse this virtual network.
+
+**Mitigations in place:**
+- **Windows Firewall**: Only connections from `LocalSubnet` (WSL virtual network)
+  are allowed to reach port 9222
+- **Temporary profiles**: Each Chrome instance uses a fresh, isolated profile
+  that is cleaned up after authentication
+- **Short-lived**: Remote debugging is only active during the explicit `nlm login --wsl`
+  command and terminated immediately after
+- **No external exposure**: The Windows Firewall rule prevents connections from
+  external network hosts
+
+If you have concerns about this setup, you can use manual mode instead:
+```bash
+nlm login --manual --file /path/to/cookies.txt
+```
+
 ## Quick Start
 
 ### 1. Ensure Chrome is installed on Windows
