@@ -166,11 +166,13 @@ def launch_windows_chrome(port: int = DEFAULT_WSL_CDP_PORT) -> subprocess.Popen:
     args = [
         str(wsl_chrome),
         f"--remote-debugging-port={port}",
-        "--remote-debugging-address=0.0.0.0",  # Bind to all interfaces so WSL can reach it
+        "--remote-debugging-address=0.0.0.0",
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-extensions",
-        "--remote-allow-origins=*",  # Required for cross-origin from external IPs
+        "--remote-allow-origins=*",
+        "--disable-web-security",  # Allow cross-origin requests
+        "--allow-insecure-localhost",  # Allow connections from WSL virtual network
     ]
 
     logger.info(f"Launching Windows Chrome on port {port}")
@@ -206,11 +208,14 @@ def wait_for_cdp(cdp_url: str, timeout: int = 30) -> bool:
     start = time.time()
     while time.time() - start < timeout:
         try:
-            response = httpx.get(f"{base_url}/json", timeout=2)
+            # Chrome requires proper Origin header for remote debugging
+            headers = {"Origin": base_url}
+            response = httpx.get(f"{base_url}/json", headers=headers, timeout=2)
             if response.status_code == 200:
                 logger.debug(f"CDP ready after {time.time() - start:.1f}s")
                 return True
-        except Exception:
+        except Exception as e:
+            logger.debug(f"CDP not ready yet: {e}")
             pass
         time.sleep(0.5)
 
