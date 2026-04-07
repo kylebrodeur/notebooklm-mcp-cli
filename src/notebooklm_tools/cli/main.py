@@ -238,6 +238,7 @@ def login_callback(
         from notebooklm_tools.utils.cdp import (
             extract_cookies_via_cdp,
             extract_cookies_via_existing_cdp,
+            get_browser_display_name,
             terminate_chrome,
         )
 
