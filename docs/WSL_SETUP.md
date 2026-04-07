@@ -33,21 +33,17 @@ Download: https://www.google.com/chrome/
 nlm login --wsl
 ```
 
-Or skip the firewall prompt entirely:
-
-```bash
-nlm login --wsl --auto-firewall
-```
-
 This will:
 - Detect your Windows IP address from WSL
-- Check/create Windows Firewall rule (prompts unless --auto-firewall)
+- **Auto-create Windows Firewall rule** (attempts silently, shows workaround if it fails)
 - Launch Chrome on Windows with remote debugging
 - Open NotebookLM in Chrome
 - Wait for you to log in
 - Extract cookies automatically
 - Close Chrome
 - Save credentials to your profile
+
+If the firewall rule creation fails, you'll see the manual command to run in PowerShell (Admin).
 
 ### 3. Verify
 
@@ -77,15 +73,23 @@ WSL Auth Script
 
 ## Troubleshooting
 
-### "Chrome did not start within 30 seconds" or firewall prompt shows ^M
+### "Chrome did not start within 30 seconds"
 
-If you see `^M` characters when typing or the firewall prompt doesn't accept input, use the auto-firewall flag:
+**Most likely cause: Windows Firewall**
 
-```bash
-nlm login --wsl --auto-firewall
+The tool attempts to auto-create the firewall rule. If it fails, you'll see:
+```
+Workaround - Run manually in Windows PowerShell (Admin):
+  New-NetFirewallRule -DisplayName "NotebookLM-CDP-9222" ...
 ```
 
-This bypasses the interactive prompt and automatically creates the firewall rule.
+Run that command in **Windows PowerShell (as Administrator)**, then retry `nlm login --wsl`.
+
+Or use manual mode as a fallback:
+```bash
+# Export cookies from Chrome using Cookie-Editor extension
+nlm login --manual --file /mnt/c/Users/<username>/Downloads/cookies.txt
+```
 
 ### "Chrome not found on Windows side"
 
