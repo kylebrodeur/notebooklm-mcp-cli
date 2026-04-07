@@ -138,9 +138,7 @@ def logged_tool():
             async def wrapper(*args, **kwargs):
                 tool_name = func.__name__
                 if mcp_logger.isEnabledFor(logging.DEBUG):
-                    params = _sanitize_params(
-                        {k: v for k, v in kwargs.items() if v is not None}
-                    )
+                    params = _sanitize_params({k: v for k, v in kwargs.items() if v is not None})
                     mcp_logger.debug(f"MCP Request: {tool_name}({json.dumps(params, default=str)})")
 
                 result = await func(*args, **kwargs)
@@ -158,9 +156,7 @@ def logged_tool():
             def wrapper(*args, **kwargs):
                 tool_name = func.__name__
                 if mcp_logger.isEnabledFor(logging.DEBUG):
-                    params = _sanitize_params(
-                        {k: v for k, v in kwargs.items() if v is not None}
-                    )
+                    params = _sanitize_params({k: v for k, v in kwargs.items() if v is not None})
                     mcp_logger.debug(f"MCP Request: {tool_name}({json.dumps(params, default=str)})")
 
                 result = func(*args, **kwargs)

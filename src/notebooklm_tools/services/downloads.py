@@ -63,8 +63,7 @@ def validate_output_path(output_path: str) -> None:
     """
     if ".." in Path(output_path).parts:
         raise ValidationError(
-            "output_path must not contain '..' components. "
-            f"Received: '{output_path}'"
+            f"output_path must not contain '..' components. Received: '{output_path}'"
         )
 
 
