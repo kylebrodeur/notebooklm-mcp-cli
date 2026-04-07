@@ -225,8 +225,6 @@ def launch_windows_chrome(port: int = DEFAULT_WSL_CDP_PORT, debug: bool = False)
         f"--remote-debugging-port={port}",
         "--remote-debugging-address=0.0.0.0",
         f"--user-data-dir={windows_temp}",  # CRITICAL: Fresh profile for separate instance
-        "--incognito",  # Use incognito mode to avoid profile conflicts
-        "--new-window",  # Force new window in this instance
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-extensions",
