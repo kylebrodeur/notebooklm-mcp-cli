@@ -124,11 +124,12 @@ def find_windows_chrome() -> str | None:
     return None
 
 
-def launch_windows_chrome(port: int = DEFAULT_WSL_CDP_PORT) -> subprocess.Popen:
+def launch_windows_chrome(port: int = DEFAULT_WSL_CDP_PORT, debug: bool = False) -> subprocess.Popen:
     """Launch Chrome on Windows side from WSL.
 
     Args:
         port: Remote debugging port to use.
+        debug: If True, capture Chrome's stderr for diagnostics.
 
     Returns:
         subprocess.Popen handle to the Windows Chrome process.
@@ -163,24 +164,52 @@ def launch_windows_chrome(port: int = DEFAULT_WSL_CDP_PORT) -> subprocess.Popen:
     # C:\Program Files\... -> /mnt/c/Program Files/...
     wsl_chrome = Path("/mnt/c") / chrome_path[3:].replace("\\", "/")
 
+    # Create a temp profile directory for clean Chrome instance
+    import tempfile
+    temp_dir = tempfile.mkdtemp(prefix="nlm-chrome-")
+    windows_temp = subprocess.run(
+        ["wslpath", "-w", temp_dir],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
     args = [
         str(wsl_chrome),
         f"--remote-debugging-port={port}",
         "--remote-debugging-address=0.0.0.0",
+        f"--user-data-dir={windows_temp}",  # Fresh profile to avoid conflicts
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-extensions",
-        "--remote-allow-origins=*",
-        "--disable-web-security",  # Allow cross-origin requests
-        "--allow-insecure-localhost",  # Allow connections from WSL virtual network
+        "--disable-background-networking",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-breakpad",
+        "--disable-component-update",
+        "--disable-default-apps",
+        "--disable-features=TranslateUI",
+        "--disable-hang-monitor",
+        "--disable-ipc-flooding-protection",
+        "--disable-popup-blocking",
+        "--disable-prompt-on-repost",
+        "--disable-renderer-backgrounding",
+        "--force-color-profile=srgb",
+        "--metrics-recording-only",
+        "--no-default-browser-check",
+        "--safebrowsing-disable-auto-update",
     ]
 
+    stderr_arg = None if debug else subprocess.DEVNULL
+    stdout_arg = None if debug else subprocess.DEVNULL
+
     logger.info(f"Launching Windows Chrome on port {port}")
+    logger.debug(f"Chrome temp profile: {temp_dir}")
     try:
         process = subprocess.Popen(
             args,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=stdout_arg,
+            stderr=stderr_arg,
             start_new_session=True,  # Prevent signal propagation
         )
         logger.debug(f"Chrome process started: PID {process.pid}")
@@ -206,20 +235,22 @@ def wait_for_cdp(cdp_url: str, timeout: int = 30) -> bool:
 
     logger.debug(f"Waiting for CDP at {base_url}")
     start = time.time()
+    last_error = None
     while time.time() - start < timeout:
         try:
-            # Chrome requires proper Origin header for remote debugging
-            headers = {"Origin": base_url}
-            response = httpx.get(f"{base_url}/json", headers=headers, timeout=2)
+            # Try without headers first (simplest approach)
+            response = httpx.get(f"{base_url}/json", timeout=2, follow_redirects=True)
             if response.status_code == 200:
                 logger.debug(f"CDP ready after {time.time() - start:.1f}s")
                 return True
+            else:
+                logger.debug(f"CDP returned status {response.status_code}")
         except Exception as e:
-            logger.debug(f"CDP not ready yet: {e}")
+            last_error = str(e)
             pass
         time.sleep(0.5)
 
-    logger.warning(f"CDP not ready after {timeout}s")
+    logger.warning(f"CDP not ready after {timeout}s (last error: {last_error})")
     return False
 
 
@@ -403,3 +434,77 @@ def remove_firewall_rule(port: int = DEFAULT_WSL_CDP_PORT) -> bool:
     except Exception as e:
         logger.warning(f"Failed to remove firewall rule: {e}")
         return False
+
+
+def diagnose_wsl_connectivity(host_ip: str, port: int = DEFAULT_WSL_CDP_PORT) -> dict:
+    """Run diagnostics to troubleshoot WSL->Windows connectivity issues.
+
+    Args:
+        host_ip: The Windows host IP to test.
+        port: The port to test.
+
+    Returns:
+        Dictionary with diagnostic results.
+    """
+    results = {
+        "wsl_detected": is_wsl(),
+        "windows_ip": host_ip,
+        "port": port,
+        "tests": {},
+    }
+
+    # Test 1: Basic TCP connection
+    import socket
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        sock.connect((host_ip, port))
+        sock.close()
+        results["tests"]["tcp_connection"] = "PASS"
+    except Exception as e:
+        results["tests"]["tcp_connection"] = f"FAIL: {e}"
+
+    # Test 2: HTTP request to /json
+    try:
+        import httpx
+        response = httpx.get(f"http://{host_ip}:{port}/json", timeout=5)
+        results["tests"]["http_json"] = f"Status {response.status_code}"
+        if response.status_code == 200:
+            data = response.json()
+            results["tests"]["chrome_pages"] = len(data)
+    except Exception as e:
+        results["tests"]["http_json"] = f"FAIL: {e}"
+
+    # Test 3: Check Chrome process on Windows
+    ps_path = _get_powershell_path()
+    if ps_path:
+        try:
+            ps_cmd = 'Get-Process chrome -ErrorAction SilentlyContinue | Select-Object -First 1'
+            result = subprocess.run(
+                [str(ps_path), "-Command", ps_cmd],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            results["tests"]["chrome_running"] = "YES" if "chrome" in result.stdout.lower() else "NO"
+        except Exception as e:
+            results["tests"]["chrome_running"] = f"ERROR: {e}"
+
+    # Test 4: Firewall rule
+    results["tests"]["firewall_rule"] = "EXISTS" if check_firewall_rule(port) else "MISSING"
+
+    # Test 5: Port binding on Windows
+    if ps_path:
+        try:
+            ps_cmd = f'Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | Select-Object LocalAddress, LocalPort, State'
+            result = subprocess.run(
+                [str(ps_path), "-Command", ps_cmd],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            results["tests"]["port_binding"] = result.stdout.strip() if result.stdout.strip() else "NOT_FOUND"
+        except Exception as e:
+            results["tests"]["port_binding"] = f"ERROR: {e}"
+
+    return results

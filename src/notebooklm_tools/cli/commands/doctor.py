@@ -191,7 +191,11 @@ def _check_wsl_chrome(verbose: bool) -> bool:
     console.print("[bold]Chrome (WSL2)[/bold]")
     ok = True
 
-    from notebooklm_tools.utils.wsl import find_windows_chrome
+    from notebooklm_tools.utils.wsl import (
+        diagnose_wsl_connectivity,
+        find_windows_chrome,
+        get_windows_host_ip,
+    )
 
     chrome_path = find_windows_chrome()
     if chrome_path:
@@ -202,6 +206,15 @@ def _check_wsl_chrome(verbose: bool) -> bool:
         console.print("  [yellow]→[/yellow] Install Chrome on Windows side")
         console.print("    or use [cyan]nlm login --manual[/cyan] with cookie file")
         ok = False
+
+    # Run connectivity diagnostics
+    windows_ip = get_windows_host_ip()
+    if windows_ip and verbose:
+        console.print("\n  [dim]Running connectivity diagnostics...[/dim]")
+        diagnostics = diagnose_wsl_connectivity(windows_ip)
+        for test_name, result in diagnostics.get("tests", {}).items():
+            status = "[green]✓[/green]" if "PASS" in str(result).upper() or result in ["EXISTS", "YES"] else "[red]✗[/red]"
+            console.print(f"    {status} {test_name}: {result}")
 
     # Check for saved profile (same as regular mode)
     from notebooklm_tools.utils.config import get_storage_dir
