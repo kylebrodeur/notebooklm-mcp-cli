@@ -33,8 +33,15 @@ Download: https://www.google.com/chrome/
 nlm login --wsl
 ```
 
+Or skip the firewall prompt entirely:
+
+```bash
+nlm login --wsl --auto-firewall
+```
+
 This will:
 - Detect your Windows IP address from WSL
+- Check/create Windows Firewall rule (prompts unless --auto-firewall)
 - Launch Chrome on Windows with remote debugging
 - Open NotebookLM in Chrome
 - Wait for you to log in
@@ -69,6 +76,16 @@ WSL Auth Script
 ```
 
 ## Troubleshooting
+
+### "Chrome did not start within 30 seconds" or firewall prompt shows ^M
+
+If you see `^M` characters when typing or the firewall prompt doesn't accept input, use the auto-firewall flag:
+
+```bash
+nlm login --wsl --auto-firewall
+```
+
+This bypasses the interactive prompt and automatically creates the firewall rule.
 
 ### "Chrome not found on Windows side"
 
