@@ -132,6 +132,11 @@ def login_callback(
         "--clear",
         help="Delete the localized Chrome profile data before logging in, to switch Google accounts",
     ),
+    wsl: bool = typer.Option(
+        False,
+        "--wsl",
+        help="Launch Windows Chrome from WSL (fixes terminal corruption on WSL2)",
+    ),
 ) -> None:
     """
     Authenticate with NotebookLM.
@@ -141,6 +146,7 @@ def login_callback(
     Use --check to validate existing credentials.
     Use --provider openclaw --cdp-url <url> to read auth from an existing
     OpenClaw-managed browser CDP endpoint.
+    Use --wsl on WSL2 to launch Windows Chrome and avoid terminal corruption.
 
     To switch active accounts, run `nlm login switch <profile>`.
     """
@@ -241,7 +247,62 @@ def login_callback(
         # user explicitly passes their own --cdp-url value.
         _BUILTIN_CDP_DEFAULT = "http://127.0.0.1:18800"
 
-        if provider == "openclaw" or (provider == "builtin" and cdp_url != _BUILTIN_CDP_DEFAULT):
+        if wsl:
+            # WSL mode: Launch Windows Chrome from WSL to avoid terminal corruption
+            from notebooklm_tools.utils.wsl import (
+                get_windows_host_ip,
+                is_wsl,
+                launch_windows_chrome,
+                terminate_windows_chrome,
+                wait_for_cdp,
+            )
+
+            if not is_wsl():
+                console.print("[yellow]Warning:[/yellow] --wsl flag used but not in WSL environment. Ignoring.")
+            else:
+                from notebooklm_tools.utils.wsl import DEFAULT_WSL_CDP_PORT
+
+                wsl_port = DEFAULT_WSL_CDP_PORT
+                windows_ip = get_windows_host_ip()
+
+                if not windows_ip:
+                    console.print("[red]Error:[/red] Could not determine Windows host IP.")
+                    console.print("[dim]Hint: Check /etc/resolv.conf in WSL[/dim]")
+                    raise typer.Exit(1)
+
+                wsl_cdp_url = f"http://{windows_ip}:{wsl_port}"
+
+                console.print("[bold]WSL2 detected - launching Windows Chrome[/bold]")
+                console.print(f"[dim]Windows host: {windows_ip}:{wsl_port}[/dim]\n")
+
+                try:
+                    chrome_process = launch_windows_chrome(wsl_port)
+                except RuntimeError as e:
+                    console.print(f"[red]Error:[/red] {e}")
+                    console.print("[dim]Hint: Ensure Chrome is installed on Windows side[/dim]")
+                    raise typer.Exit(1) from e
+
+                console.print("[dim]Waiting for Chrome DevTools Protocol...[/dim]")
+                if not wait_for_cdp(wsl_cdp_url, timeout=30):
+                    console.print("[red]Error:[/red] Chrome did not start within 30 seconds.")
+                    terminate_windows_chrome(chrome_process)
+                    raise typer.Exit(1)
+
+                console.print("[green]✓[/green] Chrome ready, connecting...\n")
+
+                try:
+                    result = extract_cookies_via_existing_cdp(
+                        cdp_url=wsl_cdp_url,
+                        wait_for_login=True,
+                        login_timeout=300,
+                    )
+                finally:
+                    # Always terminate Windows Chrome
+                    terminate_windows_chrome(chrome_process)
+
+                launched_local_chrome = True
+
+        elif provider == "openclaw" or (provider == "builtin" and cdp_url != _BUILTIN_CDP_DEFAULT):
             # External CDP path: connect to an already-running browser.
             # Triggered by --provider openclaw OR when the user explicitly
             # passes a --cdp-url (indicating they have a running Chrome).
