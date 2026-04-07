@@ -1,6 +1,7 @@
 """Downloads service — shared validation and routing for artifact downloads."""
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import TypedDict
 
 from ..core.client import NotebookLMClient
@@ -52,6 +53,19 @@ class DownloadResult(TypedDict):
 
     artifact_type: str
     path: str
+
+
+def validate_output_path(output_path: str) -> None:
+    """Validate output_path to prevent path traversal attacks.
+
+    Rejects paths that contain '..' components, which could be used to write
+    files outside the intended directory.
+    """
+    if ".." in Path(output_path).parts:
+        raise ValidationError(
+            "output_path must not contain '..' components. "
+            f"Received: '{output_path}'"
+        )
 
 
 def validate_artifact_type(artifact_type: str) -> None:
@@ -110,6 +124,7 @@ def download_sync(
         ServiceError: If the download fails
     """
     validate_artifact_type(artifact_type)
+    validate_output_path(output_path)
 
     if artifact_type in INTERACTIVE_TYPES:
         validate_output_format(output_format)
@@ -172,6 +187,7 @@ async def download_async(
         ServiceError: If the download fails
     """
     validate_artifact_type(artifact_type)
+    validate_output_path(output_path)
 
     if artifact_type in INTERACTIVE_TYPES:
         validate_output_format(output_format)

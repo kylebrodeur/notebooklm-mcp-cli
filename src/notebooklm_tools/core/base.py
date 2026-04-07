@@ -11,8 +11,8 @@ Internal API. See CLAUDE.md for full documentation.
 import json
 import logging
 import os
-import random
 import re
+import secrets
 import urllib.parse
 from typing import Any
 
@@ -286,7 +286,7 @@ class BaseClient:
         self._conversation_cache: dict[str, list[ConversationTurn]] = {}
 
         # Request counter for _reqid parameter (required for query endpoint)
-        self._reqid_counter = random.randint(100000, 999999)
+        self._reqid_counter = secrets.randbelow(900_000) + 100_000
 
         # RPC version cache for URL source addition (issue #121).
         # Google is rolling out a new RPC (ozz5Z) to replace izAoDd for URL sources.
@@ -720,13 +720,21 @@ class BaseClient:
 
             csrf_token = extract_csrf_from_page_source(html)
             if not csrf_token:
-                # Save HTML for debugging
+                # Save HTML for debugging, scrubbing live credential values first
                 from notebooklm_tools.utils.config import get_storage_dir
 
                 debug_dir = get_storage_dir()
                 debug_dir.mkdir(parents=True, exist_ok=True)
                 debug_path = debug_dir / "debug_page.html"
-                debug_path.write_text(html, encoding="utf-8")
+                # Remove embedded tokens so the debug file doesn't contain live creds
+                scrubbed = re.sub(r'"SNlM0e":"[^"]+"', '"SNlM0e":"[REDACTED]"', html)
+                scrubbed = re.sub(r'"FdrFJe":"[^"]+"', '"FdrFJe":"[REDACTED]"', scrubbed)
+                debug_path.write_text(scrubbed, encoding="utf-8")
+                # Restrict to owner-only so other local users can't read session data
+                try:
+                    os.chmod(debug_path, 0o600)
+                except OSError:
+                    logger.warning("Failed to set permissions on %s", debug_path)
                 raise ValueError(
                     f"Could not extract CSRF token from page. "
                     f"Page saved to {debug_path} for debugging. "
