@@ -136,10 +136,11 @@ def launch_windows_chrome(port: int = DEFAULT_WSL_CDP_PORT) -> subprocess.Popen:
     args = [
         str(wsl_chrome),
         f"--remote-debugging-port={port}",
+        "--remote-debugging-address=0.0.0.0",  # Bind to all interfaces so WSL can reach it
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-extensions",
-        "--remote-allow-origins=*",  # Required for cross-origin from WSL
+        "--remote-allow-origins=*",  # Required for cross-origin from external IPs
     ]
 
     logger.info(f"Launching Windows Chrome on port {port}")

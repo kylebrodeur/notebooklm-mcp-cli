@@ -273,18 +273,25 @@ def login_callback(
                 wsl_cdp_url = f"http://{windows_ip}:{wsl_port}"
 
                 console.print("[bold]WSL2 detected - launching Windows Chrome[/bold]")
-                console.print(f"[dim]Windows host: {windows_ip}:{wsl_port}[/dim]\n")
+                console.print(f"[dim]Windows host: {windows_ip}:{wsl_port}[/dim]")
+                console.print("[dim]Chrome will bind to 0.0.0.0 to allow WSL connections[/dim]\n")
 
                 try:
                     chrome_process = launch_windows_chrome(wsl_port)
+                    console.print(f"[dim]Chrome PID: {chrome_process.pid}[/dim]")
                 except RuntimeError as e:
                     console.print(f"[red]Error:[/red] {e}")
                     console.print("[dim]Hint: Ensure Chrome is installed on Windows side[/dim]")
                     raise typer.Exit(1) from e
 
-                console.print("[dim]Waiting for Chrome DevTools Protocol...[/dim]")
+                console.print("[dim]Waiting for Chrome DevTools Protocol (tip: check Windows Firewall)...[/dim]")
                 if not wait_for_cdp(wsl_cdp_url, timeout=30):
                     console.print("[red]Error:[/red] Chrome did not start within 30 seconds.")
+                    console.print("\n[yellow]Troubleshooting:[/yellow]")
+                    console.print("  1. Windows Firewall may be blocking port 9222 from WSL")
+                    console.print("  2. Try running in PowerShell as Admin:")
+                    console.print('     netsh advfirewall firewall add rule name="Chrome CDP" dir=in action=allow protocol=tcp localport=9222')
+                    console.print("  3. Or use manual mode: nlm login --manual --file <path>")
                     terminate_windows_chrome(chrome_process)
                     raise typer.Exit(1)
 
