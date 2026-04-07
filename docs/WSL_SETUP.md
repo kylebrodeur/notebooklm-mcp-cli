@@ -35,15 +35,13 @@ nlm login --wsl
 
 This will:
 - Detect your Windows IP address from WSL
-- **Auto-create Windows Firewall rule** (attempts silently, shows workaround if it fails)
+- **Check Windows Firewall setup** (prompts with instructions)
 - Launch Chrome on Windows with remote debugging
 - Open NotebookLM in Chrome
 - Wait for you to log in
 - Extract cookies automatically
 - Close Chrome
 - Save credentials to your profile
-
-If the firewall rule creation fails, you'll see the manual command to run in PowerShell (Admin).
 
 ### 3. Verify
 
@@ -75,21 +73,21 @@ WSL Auth Script
 
 ### "Chrome did not start within 30 seconds"
 
-**Most likely cause: Windows Firewall**
+If you pressed Enter after creating the firewall rule but Chrome still won't connect:
 
-The tool attempts to auto-create the firewall rule. If it fails, you'll see:
-```
-Workaround - Run manually in Windows PowerShell (Admin):
-  New-NetFirewallRule -DisplayName "NotebookLM-CDP-9222" ...
-```
+1. **Verify the rule was created:**
+   ```powershell
+   # In Windows PowerShell
+   Get-NetFirewallRule -DisplayName "NotebookLM-CDP-9222"
+   ```
 
-Run that command in **Windows PowerShell (as Administrator)**, then retry `nlm login --wsl`.
+2. **Close any running Chrome instances** and retry `nlm login --wsl`
 
-Or use manual mode as a fallback:
-```bash
-# Export cookies from Chrome using Cookie-Editor extension
-nlm login --manual --file /mnt/c/Users/<username>/Downloads/cookies.txt
-```
+3. **Or use manual mode** (no Chrome launch needed):
+   ```bash
+   # Export cookies from Chrome using Cookie-Editor extension
+   nlm login --manual --file /mnt/c/Users/<username>/Downloads/cookies.txt
+   ```
 
 ### "Chrome not found on Windows side"
 

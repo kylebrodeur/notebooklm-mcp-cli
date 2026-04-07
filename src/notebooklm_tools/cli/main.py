@@ -137,11 +137,6 @@ def login_callback(
         "--wsl",
         help="Launch Windows Chrome from WSL (fixes terminal corruption on WSL2)",
     ),
-    auto_firewall: bool = typer.Option(
-        False,
-        "--auto-firewall",
-        help="Auto-create Windows Firewall rule without prompting (for WSL mode)",
-    ),
 ) -> None:
     """
     Authenticate with NotebookLM.
@@ -256,7 +251,6 @@ def login_callback(
             # WSL mode: Launch Windows Chrome from WSL to avoid terminal corruption
             from notebooklm_tools.utils.wsl import (
                 check_firewall_rule,
-                create_firewall_rule,
                 get_windows_host_ip,
                 is_wsl,
                 launch_windows_chrome,
@@ -283,21 +277,23 @@ def login_callback(
                 console.print(f"[dim]Windows host: {windows_ip}:{wsl_port}[/dim]")
                 console.print("[dim]Chrome will bind to 0.0.0.0 to allow WSL connections[/dim]")
 
-                # Check Windows Firewall - always try to create, don't prompt
+                # Check Windows Firewall
+
                 if not check_firewall_rule(wsl_port):
-                    console.print(f"\n[yellow]Windows Firewall:[/yellow] Creating rule for port {wsl_port}...")
-                    if auto_firewall:
-                        console.print("[dim](--auto-firewall was explicitly set)[/dim]")
+                    console.print("\n[yellow]Windows Firewall Setup Required[/yellow]")
+                    console.print(f"\nA firewall rule is needed to allow WSL to connect to Windows Chrome on port {wsl_port}.")
+                    console.print("\n[bold]Step 1:[/bold] Open [cyan]Windows PowerShell as Administrator[/cyan] and run:")
+                    console.print(f'\n  New-NetFirewallRule -DisplayName "NotebookLM-CDP-{wsl_port}" -Direction Inbound -Action Allow -Protocol TCP -LocalPort {wsl_port} -RemoteAddress LocalSubnet\n')
+                    console.print("[bold]Step 2:[/bold] After running the command above, press [bold]Enter[/bold] here to continue...")
                     
-                    success, msg = create_firewall_rule(wsl_port)
-                    if success:
-                        console.print(f"[green]✓[/green] {msg}")
+                    # Simple wait for Enter
+                    input()
+                    
+                    # Re-check if rule was created
+                    if check_firewall_rule(wsl_port):
+                        console.print("[green]✓[/green] Firewall rule detected!")
                     else:
-                        console.print("[yellow]Note:[/yellow] Could not auto-create firewall rule.")
-                        console.print(f"[dim]{msg}[/dim]")
-                        console.print("\n[yellow]Workaround - Run manually in Windows PowerShell (Admin):[/yellow]")
-                        console.print(f'  New-NetFirewallRule -DisplayName "NotebookLM-CDP-{wsl_port}" -Direction Inbound -Action Allow -Protocol TCP -LocalPort {wsl_port} -RemoteAddress LocalSubnet')
-                        console.print("\n[dim]Attempting authentication anyway...[/dim]")
+                        console.print("[yellow]Warning:[/yellow] Rule not yet detected, but will attempt to continue...")
                     console.print()
                 else:
                     console.print("[dim]Windows Firewall: rule exists[/dim]")
@@ -311,13 +307,12 @@ def login_callback(
                     console.print("[dim]Hint: Ensure Chrome is installed on Windows side[/dim]")
                     raise typer.Exit(1) from e
 
-                console.print("[dim]Waiting for Chrome DevTools Protocol (tip: check Windows Firewall)...[/dim]")
+                console.print("[dim]Waiting for Chrome DevTools Protocol...[/dim]")
                 if not wait_for_cdp(wsl_cdp_url, timeout=30):
                     console.print("[red]Error:[/red] Chrome did not start within 30 seconds.")
                     console.print("\n[yellow]Troubleshooting:[/yellow]")
-                    console.print("  1. Windows Firewall may be blocking port 9222 from WSL")
-                    console.print("  2. Try running in PowerShell as Admin:")
-                    console.print('     netsh advfirewall firewall add rule name="Chrome CDP" dir=in action=allow protocol=tcp localport=9222')
+                    console.print("  1. Ensure the Windows Firewall rule was created (step above)")
+                    console.print("  2. If Chrome is still running, close it and retry")
                     console.print("  3. Or use manual mode: nlm login --manual --file <path>")
                     terminate_windows_chrome(chrome_process)
                     raise typer.Exit(1)
