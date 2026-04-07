@@ -297,45 +297,27 @@ def create_firewall_rule(port: int = DEFAULT_WSL_CDP_PORT) -> tuple[bool, str]:
         return False, "PowerShell not found on Windows side"
 
     rule_name = f"NotebookLM-CDP-{port}"
-    
-    # Build PowerShell command to create firewall rule
-    # Uses sudo on Windows if available (PowerShell 7+)
-    ps_cmd = (
-        f"$rule = New-NetFirewallRule -DisplayName '{rule_name}' "
-        f"-Direction Inbound -Action Allow -Protocol TCP -LocalPort {port} "
-        f"-RemoteAddress LocalSubnet "
-        f"-Description 'Allow WSL2 to connect to Chrome DevTools Protocol for NotebookLM MCP'; "
-        f"'Created firewall rule: ' + $rule.DisplayName"
-    )
 
     try:
-        # Try with sudo first (if available in PowerShell)
+        # Build PowerShell command to create firewall rule
+        # This will trigger UAC prompt if not running as admin
         logger.info(f"Creating Windows Firewall rule for port {port}")
         
-        # Check if sudo is available
-        sudo_check = subprocess.run(
-            [str(ps_path), "-Command", "Get-Command sudo -ErrorAction SilentlyContinue"],
+        ps_cmd = (
+            f"New-NetFirewallRule -DisplayName '{rule_name}' "
+            f"-Direction Inbound -Action Allow -Protocol TCP -LocalPort {port} "
+            f"-RemoteAddress LocalSubnet "
+            f"-Description 'Allow WSL2 to connect to Chrome DevTools Protocol for NotebookLM MCP'"
+        )
+
+        result = subprocess.run(
+            [str(ps_path), "-Command", ps_cmd],
             capture_output=True,
             text=True,
         )
-        has_sudo = sudo_check.returncode == 0
-        
-        if has_sudo:
-            result = subprocess.run(
-                [str(ps_path), "-Command", f"sudo {ps_cmd}"],
-                capture_output=True,
-                text=True,
-            )
-        else:
-            # Try without sudo - will fail if not admin
-            result = subprocess.run(
-                [str(ps_path), "-Command", ps_cmd],
-                capture_output=True,
-                text=True,
-            )
 
         if result.returncode == 0:
-            msg = result.stdout.strip() if result.stdout else f"Created rule '{rule_name}'"
+            msg = f"Created firewall rule '{rule_name}'"
             logger.info(msg)
             return True, msg
         else:
@@ -346,9 +328,9 @@ def create_firewall_rule(port: int = DEFAULT_WSL_CDP_PORT) -> tuple[bool, str]:
             if "access" in error.lower() or "permission" in error.lower() or "privilege" in error.lower():
                 return False, (
                     "Administrator privileges required.\n"
-                    "Run in PowerShell (Admin): "
-                    f"netsh advfirewall firewall add rule name='{rule_name}' "
-                    f"dir=in action=allow protocol=tcp localport={port}"
+                    "Please run in Windows PowerShell (as Administrator):\n"
+                    f"  New-NetFirewallRule -DisplayName '{rule_name}' "
+                    f"-Direction Inbound -Action Allow -Protocol TCP -LocalPort {port}"
                 )
             return False, error
             

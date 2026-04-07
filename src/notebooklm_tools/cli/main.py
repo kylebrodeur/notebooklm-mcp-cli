@@ -2,10 +2,6 @@
 
 import contextlib
 import logging
-import select
-import sys
-import termios
-import tty
 
 import typer
 
@@ -287,58 +283,21 @@ def login_callback(
                 console.print(f"[dim]Windows host: {windows_ip}:{wsl_port}[/dim]")
                 console.print("[dim]Chrome will bind to 0.0.0.0 to allow WSL connections[/dim]")
 
-                # Check Windows Firewall
+                # Check Windows Firewall - always try to create, don't prompt
                 if not check_firewall_rule(wsl_port):
-                    console.print(f"\n[yellow]Windows Firewall check:[/yellow] No rule found for port {wsl_port}")
-                    
+                    console.print(f"\n[yellow]Windows Firewall:[/yellow] Creating rule for port {wsl_port}...")
                     if auto_firewall:
-                        console.print("[dim]--auto-firewall set, creating rule...[/dim]")
-                        should_create = True
-                    else:
-                        # Use simple input() to avoid Rich's Confirm issues with WSL terminal
-                        # Flush any pending input
-                        while select.select([sys.stdin], [], [], 0.0)[0]:
-                            sys.stdin.read(1)
-                        
-                        console.print("Create firewall rule to allow WSL connections? [Y/n]: ", end="")
-                        old_settings = None
-                        try:
-                            # Save terminal settings
-                            old_settings = termios.tcgetattr(sys.stdin)
-                            tty.setcbreak(sys.stdin.fileno())
-                            
-                            # Read a single character
-                            response = sys.stdin.read(1)
-                            if response == '\r' or response == '\n':
-                                response = 'y'  # Default to yes on just Enter
-                            else:
-                                # Read and discard until newline
-                                while sys.stdin.read(1) not in ('\r', '\n'):
-                                    pass
-                            
-                            console.print()  # Newline
-                            should_create = response.lower() in ('y', 'yes', '\r', '\n', '')
-                        except Exception:
-                            # Fallback to regular input if terminal setup fails
-                            with contextlib.suppress(BaseException):
-                                if old_settings:
-                                    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-                            response = input().strip().lower()
-                            should_create = response in ('y', 'yes', '')
-                        finally:
-                            with contextlib.suppress(BaseException):
-                                if old_settings:
-                                    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+                        console.print("[dim](--auto-firewall was explicitly set)[/dim]")
                     
-                    if should_create:
-                        success, msg = create_firewall_rule(wsl_port)
-                        if success:
-                            console.print(f"[green]✓[/green] {msg}")
-                        else:
-                            console.print(f"[red]Could not create rule:[/red] {msg}")
-                            console.print("\n[yellow]Fallback:[/yellow] Authentication may still work if you manually allow the connection.")
+                    success, msg = create_firewall_rule(wsl_port)
+                    if success:
+                        console.print(f"[green]✓[/green] {msg}")
                     else:
-                        console.print("[yellow]Skipped.[/yellow] Attempting authentication anyway...")
+                        console.print("[yellow]Note:[/yellow] Could not auto-create firewall rule.")
+                        console.print(f"[dim]{msg}[/dim]")
+                        console.print("\n[yellow]Workaround - Run manually in Windows PowerShell (Admin):[/yellow]")
+                        console.print(f'  New-NetFirewallRule -DisplayName "NotebookLM-CDP-{wsl_port}" -Direction Inbound -Action Allow -Protocol TCP -LocalPort {wsl_port} -RemoteAddress LocalSubnet')
+                        console.print("\n[dim]Attempting authentication anyway...[/dim]")
                     console.print()
                 else:
                     console.print("[dim]Windows Firewall: rule exists[/dim]")
