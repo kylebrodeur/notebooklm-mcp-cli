@@ -19,15 +19,15 @@ ordered from highest to lowest severity within each tier.
 5. [🔴 H-5 – Arbitrary File Write via Unvalidated `output_path`](#h-5)
 6. [🟠 M-1 – `NOTEBOOKLM_BASE_URL` Accepts Any URL Scheme](#m-1)
 7. [🟠 M-2 – Race Condition in Global Client Initialization](#m-2)
-8. [🟠 M-3 – GitHub Actions Use Floating Tags Instead of Pinned SHAs](#m-3)
-9. [🟠 M-4 – Publish Workflow Has Overly Broad `contents: write` Permission](#m-4)
+8. [🟠 M-3 – GitHub Actions Use Floating Tags Instead of Pinned SHAs](#m-3) ✅ *Resolved — workflows removed*
+9. [🟠 M-4 – Publish Workflow Has Overly Broad `contents: write` Permission](#m-4) ✅ *Resolved — workflows removed*
 10. [🟠 M-5 – Chrome Profile Migration Copies Full Browser Profile](#m-5)
 11. [🟡 L-1 – Non-Cryptographic `random` Used for Request Counter](#l-1)
 12. [🟡 L-2 – Profile Directory Created World-Readable Before chmod](#l-2)
 13. [🟡 L-3 – `trust: true` Silently Injected into Gemini CLI Config](#l-3)
 14. [🟡 L-4 – No URL Scheme Validation for `source_add` URL Sources](#l-4)
 15. [🟡 L-5 – Unbounded Dependency Ranges Allow Future Vulnerable Versions](#l-5)
-16. [🟡 L-6 – `actions/checkout@v6` Does Not Exist (Broken CI)](#l-6)
+16. [🟡 L-6 – `actions/checkout@v6` Does Not Exist (Broken CI)](#l-6) ✅ *Resolved — workflows removed*
 
 ---
 
@@ -497,12 +497,16 @@ profile-change block accordingly (as shown above).
 ---
 
 <a name="m-3"></a>
-### M-3 · GitHub Actions Use Floating Tags Instead of Pinned SHAs
+### M-3 · GitHub Actions Use Floating Tags Instead of Pinned SHAs ✅ *Resolved*
 
-**Files:**
-- `.github/workflows/lint-test.yml` · lines 16, 19, 33, 36
-- `.github/workflows/publish.yml` · lines 17, 20, 37
-- `.github/workflows/version-check.yml` · line 21
+> **Resolution:** All three GitHub Actions workflow files (`lint-test.yml`, `publish.yml`,
+> `version-check.yml`) have been **deleted** from the repository.  There are no longer
+> any Actions workflows that can be exploited via compromised upstream action tags.
+
+~~**Files:**~~
+- ~~`.github/workflows/lint-test.yml` · lines 16, 19, 33, 36~~
+- ~~`.github/workflows/publish.yml` · lines 17, 20, 37~~
+- ~~`.github/workflows/version-check.yml` · line 21~~
 
 **Description**
 
@@ -556,9 +560,12 @@ updates:
 ---
 
 <a name="m-4"></a>
-### M-4 · Publish Workflow Has Overly Broad `contents: write` Permission
+### M-4 · Publish Workflow Has Overly Broad `contents: write` Permission ✅ *Resolved*
 
-**File:** `.github/workflows/publish.yml` · lines 7–9
+> **Resolution:** `publish.yml` has been **deleted**.  The overly broad `contents: write`
+> permission no longer exists.
+
+~~**File:** `.github/workflows/publish.yml` · lines 7–9~~
 
 **Description**
 
@@ -935,9 +942,12 @@ updates:
 ---
 
 <a name="l-6"></a>
-### L-6 · `actions/checkout@v6` Does Not Exist (Broken CI)
+### L-6 · `actions/checkout@v6` Does Not Exist (Broken CI) ✅ *Resolved*
 
-**File:** `.github/workflows/lint-test.yml` · lines 16, 33
+> **Resolution:** `lint-test.yml` has been **deleted**.  CI jobs are no longer broken
+> by the non-existent `@v6` tag.
+
+~~**File:** `.github/workflows/lint-test.yml` · lines 16, 33~~
 
 **Description**
 
@@ -985,22 +995,22 @@ The following order maximises risk reduction per unit of effort:
 
 | Priority | Issue | Effort | Risk Reduction |
 |----------|-------|--------|----------------|
-| 1 | **L-6** – Fix `checkout@v6` → restore CI | Trivial | Enables all other automated checks |
-| 2 | **H-1** – Redact cookies in debug log | Small | Prevents credential exfiltration via logs |
-| 3 | **H-5** – Validate `output_path` | Small | Prevents arbitrary file write |
-| 4 | **H-2** – chmod debug HTML file | Trivial | Prevents local credential exposure |
-| 5 | **H-3** – Replace `--remote-allow-origins=*` | Trivial | Closes CDP side-channel |
-| 6 | **M-3** – Pin GitHub Actions SHAs | Small | Supply-chain attack prevention |
-| 7 | **H-4** – HTTP transport auth | Medium | Prevents unauthenticated tool access |
-| 8 | **M-1** – Validate `NOTEBOOKLM_BASE_URL` | Small | Prevents cookie exfiltration via env |
-| 9 | **L-4** – URL scheme allowlist | Trivial | Defense-in-depth on source URLs |
-| 10 | **L-2** – Fix mkdir permissions | Small | Closes TOCTOU window |
-| 11 | **L-3** – Confirm Gemini `trust` flag | Small | User-visible security transparency |
-| 12 | **M-2** – Fix race condition in `get_client` | Medium | Correctness under concurrency |
-| 13 | **M-4** – Narrow publish workflow permissions | Small | Supply-chain protection |
-| 14 | **M-5** – Selective Chrome profile copy | Medium | Reduces blast radius of profile compromise |
-| 15 | **L-1** – Use `secrets.randbelow` | Trivial | Best-practice hardening |
-| 16 | **L-5** – Add dependency version ceilings | Small | Future vulnerability prevention |
+| ~~1~~ | ~~**L-6** – Fix `checkout@v6` → restore CI~~ | ~~Trivial~~ | ✅ **Resolved** — workflows deleted |
+| 1 | **H-1** – Redact cookies in debug log | Small | Prevents credential exfiltration via logs |
+| 2 | **H-5** – Validate `output_path` | Small | Prevents arbitrary file write |
+| 3 | **H-2** – chmod debug HTML file | Trivial | Prevents local credential exposure |
+| 4 | **H-3** – Replace `--remote-allow-origins=*` | Trivial | Closes CDP side-channel |
+| ~~6~~ | ~~**M-3** – Pin GitHub Actions SHAs~~ | ~~Small~~ | ✅ **Resolved** — workflows deleted |
+| 5 | **H-4** – HTTP transport auth | Medium | Prevents unauthenticated tool access |
+| 6 | **M-1** – Validate `NOTEBOOKLM_BASE_URL` | Small | Prevents cookie exfiltration via env |
+| 7 | **L-4** – URL scheme allowlist | Trivial | Defense-in-depth on source URLs |
+| 8 | **L-2** – Fix mkdir permissions | Small | Closes TOCTOU window |
+| 9 | **L-3** – Confirm Gemini `trust` flag | Small | User-visible security transparency |
+| 10 | **M-2** – Fix race condition in `get_client` | Medium | Correctness under concurrency |
+| ~~13~~ | ~~**M-4** – Narrow publish workflow permissions~~ | ~~Small~~ | ✅ **Resolved** — workflows deleted |
+| 11 | **M-5** – Selective Chrome profile copy | Medium | Reduces blast radius of profile compromise |
+| 12 | **L-1** – Use `secrets.randbelow` | Trivial | Best-practice hardening |
+| 13 | **L-5** – Add dependency version ceilings | Small | Future vulnerability prevention |
 
 ---
 
