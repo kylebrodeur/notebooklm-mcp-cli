@@ -160,7 +160,7 @@ def _check_authentication(verbose: bool) -> bool:
 
 def _check_wsl(verbose: bool) -> bool:
     """Check if running in WSL and report WSL-specific diagnostics."""
-    from notebooklm_tools.utils.wsl import get_windows_host_ip, is_wsl
+    from notebooklm_tools.utils.wsl import check_firewall_rule, get_windows_host_ip, is_wsl
 
     if not is_wsl():
         return False
@@ -174,6 +174,14 @@ def _check_wsl(verbose: bool) -> bool:
     else:
         console.print("  Windows host IP: [red]not found[/red]")
         console.print("  [yellow]→[/yellow] Check /etc/resolv.conf")
+
+    # Check Windows Firewall
+    if check_firewall_rule():
+        console.print("  Firewall rule: [green]exists[/green]")
+    else:
+        console.print("  Firewall rule: [yellow]not found[/yellow]")
+        console.print("  [yellow]→[/yellow] Run with --wsl to auto-create, or:")
+        console.print("     [dim]nlm login --wsl[/dim]")
 
     return True
 

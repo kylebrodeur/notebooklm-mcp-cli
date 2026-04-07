@@ -250,6 +250,8 @@ def login_callback(
         if wsl:
             # WSL mode: Launch Windows Chrome from WSL to avoid terminal corruption
             from notebooklm_tools.utils.wsl import (
+                check_firewall_rule,
+                create_firewall_rule,
                 get_windows_host_ip,
                 is_wsl,
                 launch_windows_chrome,
@@ -274,7 +276,26 @@ def login_callback(
 
                 console.print("[bold]WSL2 detected - launching Windows Chrome[/bold]")
                 console.print(f"[dim]Windows host: {windows_ip}:{wsl_port}[/dim]")
-                console.print("[dim]Chrome will bind to 0.0.0.0 to allow WSL connections[/dim]\n")
+                console.print("[dim]Chrome will bind to 0.0.0.0 to allow WSL connections[/dim]")
+
+                # Check Windows Firewall
+                from rich.prompt import Confirm
+
+                if not check_firewall_rule(wsl_port):
+                    console.print(f"\n[yellow]Windows Firewall check:[/yellow] No rule found for port {wsl_port}")
+                    if Confirm.ask("Create firewall rule to allow WSL connections?", default=True):
+                        success, msg = create_firewall_rule(wsl_port)
+                        if success:
+                            console.print(f"[green]✓[/green] {msg}")
+                        else:
+                            console.print(f"[red]Could not create rule:[/red] {msg}")
+                            console.print("\n[yellow]Fallback:[/yellow] Authentication may still work if you manually allow the connection.")
+                    else:
+                        console.print("[yellow]Skipped.[/yellow] Attempting authentication anyway...")
+                    console.print()
+                else:
+                    console.print("[dim]Windows Firewall: rule exists[/dim]")
+                console.print()
 
                 try:
                     chrome_process = launch_windows_chrome(wsl_port)

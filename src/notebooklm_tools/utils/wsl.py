@@ -226,3 +226,163 @@ def get_wsl_cdp_url(port: int = DEFAULT_WSL_CDP_PORT) -> str | None:
     if not ip:
         return None
     return f"http://{ip}:{port}"
+
+
+def _get_powershell_path() -> Path | None:
+    """Find PowerShell executable on Windows side from WSL."""
+    # Try PowerShell 7 (pwsh) first, then Windows PowerShell
+    candidates = [
+        "/mnt/c/Program Files/PowerShell/7/pwsh.exe",
+        "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+        "/mnt/c/Windows/SysWOW64/WindowsPowerShell/v1.0/powershell.exe",
+    ]
+    for candidate in candidates:
+        path = Path(candidate)
+        if path.exists():
+            return path
+    return None
+
+
+def check_firewall_rule(port: int = DEFAULT_WSL_CDP_PORT) -> bool:
+    """Check if Windows Firewall allows inbound connections on the given port.
+
+    Args:
+        port: Port number to check.
+
+    Returns:
+        True if a rule exists, False otherwise.
+    """
+    if not is_wsl():
+        return False
+
+    ps_path = _get_powershell_path()
+    if not ps_path:
+        logger.debug("PowerShell not found")
+        return False
+
+    # Check if rule exists
+    check_cmd = (
+        f"Get-NetFirewallRule -DisplayName 'NotebookLM-CDP-{port}' "
+        "-ErrorAction SilentlyContinue | Select-Object -First 1"
+    )
+
+    try:
+        result = subprocess.run(
+            [str(ps_path), "-Command", check_cmd],
+            capture_output=True,
+            text=True,
+        )
+        exists = result.returncode == 0 and result.stdout.strip()
+        logger.debug(f"Firewall rule check for port {port}: {exists}")
+        return exists
+    except Exception as e:
+        logger.warning(f"Failed to check firewall rule: {e}")
+        return False
+
+
+def create_firewall_rule(port: int = DEFAULT_WSL_CDP_PORT) -> tuple[bool, str]:
+    """Create Windows Firewall rule to allow inbound connections from WSL.
+
+    Args:
+        port: Port number to allow.
+
+    Returns:
+        Tuple of (success: bool, message: str).
+    """
+    if not is_wsl():
+        return False, "Not running in WSL"
+
+    ps_path = _get_powershell_path()
+    if not ps_path:
+        return False, "PowerShell not found on Windows side"
+
+    rule_name = f"NotebookLM-CDP-{port}"
+    
+    # Build PowerShell command to create firewall rule
+    # Uses sudo on Windows if available (PowerShell 7+)
+    ps_cmd = (
+        f"$rule = New-NetFirewallRule -DisplayName '{rule_name}' "
+        f"-Direction Inbound -Action Allow -Protocol TCP -LocalPort {port} "
+        f"-RemoteAddress LocalSubnet "
+        f"-Description 'Allow WSL2 to connect to Chrome DevTools Protocol for NotebookLM MCP'; "
+        f"'Created firewall rule: ' + $rule.DisplayName"
+    )
+
+    try:
+        # Try with sudo first (if available in PowerShell)
+        logger.info(f"Creating Windows Firewall rule for port {port}")
+        
+        # Check if sudo is available
+        sudo_check = subprocess.run(
+            [str(ps_path), "-Command", "Get-Command sudo -ErrorAction SilentlyContinue"],
+            capture_output=True,
+            text=True,
+        )
+        has_sudo = sudo_check.returncode == 0
+        
+        if has_sudo:
+            result = subprocess.run(
+                [str(ps_path), "-Command", f"sudo {ps_cmd}"],
+                capture_output=True,
+                text=True,
+            )
+        else:
+            # Try without sudo - will fail if not admin
+            result = subprocess.run(
+                [str(ps_path), "-Command", ps_cmd],
+                capture_output=True,
+                text=True,
+            )
+
+        if result.returncode == 0:
+            msg = result.stdout.strip() if result.stdout else f"Created rule '{rule_name}'"
+            logger.info(msg)
+            return True, msg
+        else:
+            error = result.stderr.strip() if result.stderr else "Unknown error"
+            logger.warning(f"Failed to create firewall rule: {error}")
+            
+            # Check if it's a permission issue
+            if "access" in error.lower() or "permission" in error.lower() or "privilege" in error.lower():
+                return False, (
+                    "Administrator privileges required.\n"
+                    "Run in PowerShell (Admin): "
+                    f"netsh advfirewall firewall add rule name='{rule_name}' "
+                    f"dir=in action=allow protocol=tcp localport={port}"
+                )
+            return False, error
+            
+    except Exception as e:
+        logger.error(f"Exception creating firewall rule: {e}")
+        return False, str(e)
+
+
+def remove_firewall_rule(port: int = DEFAULT_WSL_CDP_PORT) -> bool:
+    """Remove the Windows Firewall rule for the given port.
+
+    Args:
+        port: Port number.
+
+    Returns:
+        True if successful, False otherwise.
+    """
+    if not is_wsl():
+        return False
+
+    ps_path = _get_powershell_path()
+    if not ps_path:
+        return False
+
+    rule_name = f"NotebookLM-CDP-{port}"
+    ps_cmd = f"Remove-NetFirewallRule -DisplayName '{rule_name}' -ErrorAction SilentlyContinue"
+
+    try:
+        result = subprocess.run(
+            [str(ps_path), "-Command", ps_cmd],
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode == 0
+    except Exception as e:
+        logger.warning(f"Failed to remove firewall rule: {e}")
+        return False
