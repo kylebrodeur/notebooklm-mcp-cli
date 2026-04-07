@@ -46,8 +46,8 @@ def is_wsl() -> bool:
 def get_windows_host_ip() -> str | None:
     """Get the Windows host IP address from WSL.
 
-    WSL2 uses a virtual network where the Windows host is reachable
-    via the nameserver IP in /etc/resolv.conf.
+    WSL2 uses a virtual network where the Windows host is the default gateway.
+    We check multiple sources to find the correct IP.
 
     Returns:
         IP address string (e.g., "172.20.112.1") or None if not in WSL.
@@ -55,6 +55,24 @@ def get_windows_host_ip() -> str | None:
     if not is_wsl():
         return None
 
+    # Method 1: Get default gateway (most reliable for Chrome binding)
+    try:
+        result = subprocess.run(
+            ["ip", "route"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        for line in result.stdout.splitlines():
+            if line.startswith("default via"):
+                # Format: "default via 172.25.144.1 dev eth0"
+                ip = line.split()[2]
+                logger.debug(f"Windows host IP from default gateway: {ip}")
+                return ip
+    except (subprocess.CalledProcessError, IndexError, FileNotFoundError) as e:
+        logger.debug(f"Could not get IP from default gateway: {e}")
+
+    # Method 2: Fallback to resolv.conf nameserver
     try:
         result = subprocess.run(
             ["grep", "nameserver", "/etc/resolv.conf"],
@@ -62,7 +80,7 @@ def get_windows_host_ip() -> str | None:
             text=True,
             check=True,
         )
-        # Format: "nameserver 172.20.112.1"
+        # Format: "nameserver 10.255.255.254"
         ip = result.stdout.strip().split()[1]
         logger.debug(f"Windows host IP from resolv.conf: {ip}")
         return ip
@@ -120,6 +138,18 @@ def launch_windows_chrome(port: int = DEFAULT_WSL_CDP_PORT) -> subprocess.Popen:
     """
     if not is_wsl():
         raise RuntimeError("Not running in WSL environment")
+
+    # Check if Chrome is already running
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "chrome.exe"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            logger.warning("Chrome appears to already be running. Remote debugging may fail.")
+    except Exception:
+        pass  # pgrep might not be available
 
     chrome_path = find_windows_chrome()
     if not chrome_path:

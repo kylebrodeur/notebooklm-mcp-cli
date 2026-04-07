@@ -27,6 +27,8 @@ The `--wsl` flag requires Google Chrome installed on the **Windows** side (not j
 
 Download: https://www.google.com/chrome/
 
+**Important:** Before running `nlm login --wsl`, **close all Chrome windows** on Windows. Chrome's remote debugging requires a fresh instance.
+
 ### 2. Authenticate
 
 ```bash
@@ -71,7 +73,15 @@ WSL Auth Script
 
 ## Troubleshooting
 
-### "Chrome did not start within 30 seconds"
+### Chrome opens but "Chrome did not start within 30 seconds"
+
+This usually means Chrome was already running when you launched it. Chrome's remote debugging only works with a fresh instance.
+
+**Solution:**
+1. **Close all Chrome windows** on Windows (check system tray too)
+2. Retry `nlm login --wsl`
+
+### "Chrome did not start within 30 seconds" (firewall-related)
 
 If you pressed Enter after creating the firewall rule but Chrome still won't connect:
 
