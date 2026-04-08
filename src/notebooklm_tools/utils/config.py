@@ -6,12 +6,16 @@ Supports automatic migration from old locations:
 - ~/.nlm/ (old CLI location)
 """
 
+import contextlib
+import logging
 import os
 import shutil
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+_logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Storage Location
@@ -27,7 +31,19 @@ def get_base_url() -> str:
     Set NOTEBOOKLM_BASE_URL to override, e.g. for enterprise:
         export NOTEBOOKLM_BASE_URL=https://notebooklm.cloud.google.com
     """
-    return os.environ.get("NOTEBOOKLM_BASE_URL", "https://notebooklm.google.com").rstrip("/")
+    import urllib.parse
+    import warnings
+
+    url = os.environ.get("NOTEBOOKLM_BASE_URL", "https://notebooklm.google.com").rstrip("/")
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https":
+        warnings.warn(
+            f"SECURITY WARNING: NOTEBOOKLM_BASE_URL uses a non-HTTPS scheme "
+            f"('{parsed.scheme}'). Authentication cookies will be sent over an "
+            f"insecure connection.",
+            stacklevel=2,
+        )
+    return url
 
 
 def get_default_language() -> str:
@@ -74,8 +90,24 @@ def get_profiles_dir() -> Path:
 def get_profile_dir(profile_name: str = "default") -> Path:
     """Get directory for a specific profile."""
     profile_dir = get_profiles_dir() / profile_name
-    profile_dir.mkdir(parents=True, exist_ok=True)
+    # Create with 0o700 (owner-only) regardless of the process umask so that
+    # credential files inside are never world-readable even before chmod is called.
+    with _clear_umask():
+        profile_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     return profile_dir
+
+
+@contextlib.contextmanager
+def _clear_umask():
+    """Context manager that temporarily clears the process umask to 0.
+
+    Required so that mkdir(mode=0o700) is not further masked by the process umask.
+    """
+    old = os.umask(0)
+    try:
+        yield
+    finally:
+        os.umask(old)
 
 
 def get_chrome_profile_dir(profile_name: str = "default") -> Path:
@@ -215,8 +247,9 @@ def migrate_aliases(source_path: Path, dry_run: bool = True) -> str | None:
 def migrate_chrome_profile(source_path: Path, dry_run: bool = True) -> str | None:
     """Migrate Chrome profile from old location.
 
-    Note: Chrome profile copy provides one-click login experience.
-    User will see account chooser but won't need to enter password.
+    Note: Copies only the files needed for session continuity (cookies and
+    local storage), not the entire profile, to limit exposure of saved passwords,
+    history, and other sensitive browser data.
 
     Args:
         source_path: Path to the old chrome-profile directory
@@ -225,14 +258,30 @@ def migrate_chrome_profile(source_path: Path, dry_run: bool = True) -> str | Non
     Returns:
         Action description if migration was done, None if skipped
     """
+    # Files/directories required for session continuity only
+    _CHROME_SESSION_FILES = ["Cookies", "Local Storage", "Session Storage"]
+
     new_chrome = get_storage_dir() / "chrome-profile"
 
     if new_chrome.exists():
         return None  # Already have a Chrome profile, don't overwrite
 
-    action = f"Copy Chrome profile from {source_path}"
+    action = f"Copy Chrome session data from {source_path}"
     if not dry_run:
-        shutil.copytree(source_path, new_chrome)
+        new_chrome.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(new_chrome, 0o700)
+        except OSError as e:
+            _logger.warning("Failed to set permissions on %s: %s", new_chrome, e)
+        for name in _CHROME_SESSION_FILES:
+            src = source_path / name
+            if not src.exists():
+                continue
+            dst = new_chrome / name
+            if src.is_dir():
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
 
     return action
 
